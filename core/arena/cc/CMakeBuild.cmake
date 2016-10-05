@@ -12,10 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-build_subdirectory(arena)
-build_subdirectory(cc)
-build_subdirectory(image)
-build_subdirectory(memory_tracker)
-build_subdirectory(os)
-build_subdirectory(text)
-build_subdirectory(vulkan)
+glob_all_dirs()
+
+glob(sources
+    PATH .
+    INCLUDE ".cpp$" ".h$"
+    EXCLUDE "_test.cpp$"
+)
+
+glob(test_sources
+    PATH .
+    INCLUDE "_test.cpp$"
+)
+
+if(NOT DISABLED_CXX)
+    add_library(cc-arena STATIC ${sources})
+endif()

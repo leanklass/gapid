@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-build_subdirectory(arena)
 build_subdirectory(cc)
-build_subdirectory(image)
-build_subdirectory(memory_tracker)
-build_subdirectory(os)
-build_subdirectory(text)
-build_subdirectory(vulkan)
+
+cgo_dependency(cc-arena)
