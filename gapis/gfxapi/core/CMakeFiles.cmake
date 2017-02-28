@@ -26,5 +26,6 @@ set(files
     mutate.go
 )
 set(dirs
+    core
     core_pb
 )
