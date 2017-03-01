@@ -736,15 +736,14 @@
   type {{$name}} map[{{$key}}]{{$value}}
 
   func (m {{$name}}) Get(key {{$key}}) {{$value}} {
-    {{if $init := Macro "Go.DefaultInitialValue" $.ValueType}}
-      v, ok := m[key]
-      if !ok {
+    v, ok := m[key]
+    if !ok {
+      {{if $init := Macro "Go.DefaultInitialValue" $.ValueType}}
         v = {{$init}}
-      }
-      return v
-    {{else}}
-      return m[key]
-    {{end}}
+      {{end}}
+      m[key] = v
+    }
+    return v
   }
 
   func (m {{$name}}) Contains(key {{$key}}) bool {

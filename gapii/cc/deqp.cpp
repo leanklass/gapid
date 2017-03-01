@@ -99,7 +99,7 @@ void GlesNull::wrapGetIntegerv(uint32_t param, GLint* values) {
 
 uint32_t GlesNull::glGetError(CallObserver* observer) {
     auto call = [] {};
-    std::shared_ptr<Context> ctx = findOrZero(this->Contexts, this->CurrentThread);
+    std::shared_ptr<Context> ctx = this->Contexts[this->CurrentThread];
     if (ctx == nullptr) {
         return GLenum::GL_INVALID_OPERATION;
     }
