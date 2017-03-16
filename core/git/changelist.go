@@ -14,9 +14,12 @@
 
 package git
 
+import "time"
+
 type ChangeList struct {
 	SHA         SHA
 	Author      string
 	Subject     string
 	Description string
+	Committed   time.Time
 }
