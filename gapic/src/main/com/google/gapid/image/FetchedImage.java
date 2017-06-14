@@ -31,8 +31,13 @@ import com.google.gapid.proto.service.Service;
 import com.google.gapid.proto.service.Service.Value;
 import com.google.gapid.proto.service.gfxapi.GfxAPI;
 import com.google.gapid.proto.service.gfxapi.GfxAPI.Cubemap;
+import com.google.gapid.proto.service.gfxapi.GfxAPI.CubemapArray;
 import com.google.gapid.proto.service.gfxapi.GfxAPI.CubemapLevel;
+import com.google.gapid.proto.service.gfxapi.GfxAPI.Texture1D;
+import com.google.gapid.proto.service.gfxapi.GfxAPI.Texture1DArray;
 import com.google.gapid.proto.service.gfxapi.GfxAPI.Texture2D;
+import com.google.gapid.proto.service.gfxapi.GfxAPI.Texture2DArray;
+import com.google.gapid.proto.service.gfxapi.GfxAPI.Texture3D;
 import com.google.gapid.proto.service.path.Path;
 import com.google.gapid.server.Client;
 import com.google.gapid.util.Values;
@@ -65,8 +70,13 @@ public class FetchedImage implements MultiLevelImage {
       GfxAPI.ResourceData data = value.getResourceData();
       GfxAPI.Texture texture = data.getTexture();
       switch (texture.getTypeCase()) {
+        case TEXTURE_1D: return load(client, imagePath, getFormat(texture.getTexture1D()));
+        case TEXTURE_1D_ARRAY: return load(client, imagePath, getFormat(texture.getTexture1DArray()));
         case TEXTURE_2D: return load(client, imagePath, getFormat(texture.getTexture2D()));
+        case TEXTURE_2D_ARRAY: return load(client, imagePath, getFormat(texture.getTexture2DArray()));
+        case TEXTURE_3D: return load(client, imagePath, getFormat(texture.getTexture3D()));
         case CUBEMAP: return load(client, imagePath, getFormat(texture.getCubemap()));
+        case CUBEMAP_ARRAY: return load(client, imagePath, getFormat(texture.getCubemapArray()));
         default:
           throw new UnsupportedOperationException("Unexpected resource type: " + value);
       }
@@ -79,8 +89,13 @@ public class FetchedImage implements MultiLevelImage {
       GfxAPI.ResourceData data = value.getResourceData();
       GfxAPI.Texture texture = data.getTexture();
       switch (texture.getTypeCase()) {
+        case TEXTURE_1D: return new FetchedImage(client, format, texture.getTexture1D());
+        case TEXTURE_1D_ARRAY: return new FetchedImage(client, format, texture.getTexture1DArray());
         case TEXTURE_2D: return new FetchedImage(client, format, texture.getTexture2D());
+        case TEXTURE_2D_ARRAY: return new FetchedImage(client, format, texture.getTexture2DArray());
+        case TEXTURE_3D: return new FetchedImage(client, format, texture.getTexture3D());
         case CUBEMAP: return new FetchedImage(client, format, texture.getCubemap());
+        case CUBEMAP_ARRAY: return new FetchedImage(client, format, texture.getCubemapArray());
         default:
           throw new UnsupportedOperationException("Unexpected resource type: " + value);
       }
@@ -103,7 +118,25 @@ public class FetchedImage implements MultiLevelImage {
     return Images.Format.from(imageInfo.getFormat());
   }
 
+  private static Images.Format getFormat(Texture1D texture) {
+    return (texture.getLevelsCount() == 0) ? Images.Format.Color8 : getFormat(texture.getLevels(0));
+  }
+
+  private static Images.Format getFormat(Texture1DArray texture) {
+    return (texture.getLayersCount() == 0 || texture.getLayers(0).getLevelsCount() == 0)
+        ? Images.Format.Color8 : getFormat(texture.getLayers(0).getLevels(0));
+  }
+
   private static Images.Format getFormat(Texture2D texture) {
+    return (texture.getLevelsCount() == 0) ? Images.Format.Color8 : getFormat(texture.getLevels(0));
+  }
+
+  private static Images.Format getFormat(Texture2DArray texture) {
+    return (texture.getLayersCount() == 0 || texture.getLayers(0).getLevelsCount() == 0)
+        ? Images.Format.Color8 : getFormat(texture.getLayers(0).getLevels(0));
+  }
+
+  private static Images.Format getFormat(Texture3D texture) {
     return (texture.getLevelsCount() == 0) ? Images.Format.Color8 : getFormat(texture.getLevels(0));
   }
 
@@ -112,11 +145,41 @@ public class FetchedImage implements MultiLevelImage {
         Images.Format.Color8 : getFormat(cubemap.getLevels(0).getNegativeZ());
   }
 
+  private static Images.Format getFormat(CubemapArray texture) {
+    return (texture.getLayersCount() == 0 || texture.getLayers(0).getLevelsCount() == 0)
+        ? Images.Format.Color8 : getFormat(texture.getLayers(0).getLevels(0).getNegativeZ());
+  }
+
+
   public FetchedImage(Client client, Images.Format format, Info imageInfo) {
     levels = new Level[] { new SingleFacedLevel(client, format, imageInfo) };
   }
 
+  public FetchedImage(Client client, Images.Format format, Texture1D texture) {
+    List<Info> infos = texture.getLevelsList();
+    levels = new Level[infos.size()];
+    for (int i = 0; i < infos.size(); i++) {
+      levels[i] = new SingleFacedLevel(client, format, infos.get(i));
+    }
+  }
+
+  public FetchedImage(Client client, Images.Format format, Texture1DArray texture) {
+    throw new RuntimeException("FetchedImage() for Texture1DArray not yet implemented");
+  }
+
   public FetchedImage(Client client, Images.Format format, Texture2D texture) {
+    List<Info> infos = texture.getLevelsList();
+    levels = new Level[infos.size()];
+    for (int i = 0; i < infos.size(); i++) {
+      levels[i] = new SingleFacedLevel(client, format, infos.get(i));
+    }
+  }
+
+  public FetchedImage(Client client, Images.Format format, Texture2DArray texture) {
+    throw new RuntimeException("FetchedImage() for Texture2DArray not yet implemented");
+  }
+
+  public FetchedImage(Client client, Images.Format format, Texture3D texture) {
     List<Info> infos = texture.getLevelsList();
     levels = new Level[infos.size()];
     for (int i = 0; i < infos.size(); i++) {
@@ -130,6 +193,10 @@ public class FetchedImage implements MultiLevelImage {
     for (int i = 0; i < infos.size(); i++) {
       levels[i] = new SixFacedLevel(client, format, infos.get(i));
     }
+  }
+
+  public FetchedImage(Client client, Images.Format format, CubemapArray texture) {
+    throw new RuntimeException("FetchedImage() for CubemapArray not yet implemented");
   }
 
   @Override
@@ -194,6 +261,11 @@ public class FetchedImage implements MultiLevelImage {
     }
 
     @Override
+    public int getDepth() {
+      return image.depth;
+    }
+
+    @Override
     public ImageBuffer getData() {
       return image;
     }
@@ -201,8 +273,8 @@ public class FetchedImage implements MultiLevelImage {
     protected abstract ListenableFuture<ArrayImageBuffer> doLoad();
 
     protected static ArrayImageBuffer convertImage(Info info, Images.Format format, byte[] data) {
-      return format.builder(info.getWidth(), info.getHeight())
-          .update(data, 0, 0, info.getWidth(), info.getHeight())
+      return format.builder(info.getWidth(), info.getHeight(), info.getDepth())
+          .update(data, 0, 0, 0, info.getWidth(), info.getHeight(), info.getDepth())
           .build();
     }
 
@@ -227,13 +299,13 @@ public class FetchedImage implements MultiLevelImage {
       // +----+----+----+----+
       // |    | +Y |    |    |
       // +----+----+----+----+
-      return format.builder(4 * width, 3 * height)
-          .update(data[0], 0 * width, 1 * height, infos[0].getWidth(), infos[0].getHeight()) // -X
-          .update(data[1], 2 * width, 1 * height, infos[1].getWidth(), infos[1].getHeight()) // +X
-          .update(data[2], 1 * width, 2 * height, infos[2].getWidth(), infos[2].getHeight()) // -Y
-          .update(data[3], 1 * width, 0 * height, infos[3].getWidth(), infos[3].getHeight()) // +Y
-          .update(data[4], 3 * width, 1 * height, infos[4].getWidth(), infos[4].getHeight()) // -Z
-          .update(data[5], 1 * width, 1 * height, infos[5].getWidth(), infos[5].getHeight()) // +Z
+      return format.builder(4 * width, 3 * height, 1)
+          .update(data[0], 0 * width, 1 * height, 0, infos[0].getWidth(), infos[0].getHeight(), 1) // -X
+          .update(data[1], 2 * width, 1 * height, 0, infos[1].getWidth(), infos[1].getHeight(), 1) // +X
+          .update(data[2], 1 * width, 2 * height, 0, infos[2].getWidth(), infos[2].getHeight(), 1) // -Y
+          .update(data[3], 1 * width, 0 * height, 0, infos[3].getWidth(), infos[3].getHeight(), 1) // +Y
+          .update(data[4], 3 * width, 1 * height, 0, infos[4].getWidth(), infos[4].getHeight(), 1) // -Z
+          .update(data[5], 1 * width, 1 * height, 0, infos[5].getWidth(), infos[5].getHeight(), 1) // +Z
           .flip()
           .build();
     }

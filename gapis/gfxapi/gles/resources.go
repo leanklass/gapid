@@ -22,6 +22,7 @@ import (
 	"github.com/google/gapid/core/log"
 	"github.com/google/gapid/gapis/atom"
 	"github.com/google/gapid/gapis/capture"
+	"github.com/google/gapid/gapis/database"
 	"github.com/google/gapid/gapis/gfxapi"
 	"github.com/google/gapid/gapis/messages"
 	"github.com/google/gapid/gapis/resolve"
@@ -59,7 +60,7 @@ func (t *Texture) ResourceType(ctx context.Context) gfxapi.ResourceType {
 func (t *Texture) ResourceData(ctx context.Context, s *gfxapi.State) (*gfxapi.ResourceData, error) {
 	ctx = log.Enter(ctx, "Texture.ResourceData()")
 	switch t.Kind {
-	case GLenum_GL_TEXTURE_2D:
+	case GLenum_GL_TEXTURE_1D, GLenum_GL_TEXTURE_2D:
 		levels := make([]*image.Info, len(t.Levels))
 		for i, level := range t.Levels {
 			img := level.Layers[0]
@@ -75,7 +76,52 @@ func (t *Texture) ResourceData(ctx context.Context, s *gfxapi.State) (*gfxapi.Re
 				Bytes:  image.NewID(img.Data.ResourceID(ctx, s)),
 			}
 		}
-		return gfxapi.NewResourceData(gfxapi.NewTexture(&gfxapi.Texture2D{Levels: levels})), nil
+		switch t.Kind {
+		case GLenum_GL_TEXTURE_1D:
+			return gfxapi.NewResourceData(gfxapi.NewTexture(&gfxapi.Texture1D{Levels: levels})), nil
+		case GLenum_GL_TEXTURE_2D:
+			return gfxapi.NewResourceData(gfxapi.NewTexture(&gfxapi.Texture2D{Levels: levels})), nil
+		case GLenum_GL_TEXTURE_3D:
+			return gfxapi.NewResourceData(gfxapi.NewTexture(&gfxapi.Texture3D{Levels: levels})), nil
+		default:
+			panic(fmt.Errorf("Unhandled texture kind %v", t.Kind))
+		}
+
+	case GLenum_GL_TEXTURE_3D:
+		levels := make([]*image.Info, len(t.Levels))
+		for i, level := range t.Levels {
+			img := level.Layers[0]
+			if img.Data.count == 0 {
+				// TODO: Make other results available
+				return nil, &service.ErrDataUnavailable{Reason: messages.ErrNoTextureData(t.ResourceHandle())}
+			}
+			bytes := []byte{}
+			for i, c := 0, len(level.Layers); i < c; i++ {
+				l := level.Layers[GLint(i)]
+				if l == nil {
+					// TODO: Make other results available
+					return nil, &service.ErrDataUnavailable{Reason: messages.ErrNoTextureData(t.ResourceHandle())}
+				}
+				data := s.Memory[l.Data.Pool()].Slice(l.Data.Range(s.MemoryLayout))
+				buf := make([]byte, data.Size())
+				if err := data.Get(ctx, 0, buf); err != nil {
+					return nil, err
+				}
+				bytes = append(bytes, buf...)
+			}
+			id, err := database.Store(ctx, bytes)
+			if err != nil {
+				return nil, err
+			}
+			levels[i] = &image.Info{
+				Format: getImageFormatOrPanic(img.DataFormat, img.DataType),
+				Width:  uint32(img.Width),
+				Height: uint32(img.Height),
+				Depth:  uint32(len(level.Layers)),
+				Bytes:  image.NewID(id),
+			}
+		}
+		return gfxapi.NewResourceData(gfxapi.NewTexture(&gfxapi.Texture3D{Levels: levels})), nil
 
 	case GLenum_GL_TEXTURE_CUBE_MAP:
 		levels := make([]*gfxapi.CubemapLevel, len(t.Levels))
@@ -110,10 +156,8 @@ func (t *Texture) ResourceData(ctx context.Context, s *gfxapi.State) (*gfxapi.Re
 			}
 		}
 		return gfxapi.NewResourceData(gfxapi.NewTexture(&gfxapi.Cubemap{Levels: levels})), nil
-
-	default:
-		return nil, &service.ErrDataUnavailable{Reason: messages.ErrNoTextureData(t.ResourceHandle())}
 	}
+	return nil, &service.ErrDataUnavailable{Reason: messages.ErrNoTextureData(t.ResourceHandle())}
 }
 
 func (t *Texture) SetResourceData(ctx context.Context, at *path.Command,
