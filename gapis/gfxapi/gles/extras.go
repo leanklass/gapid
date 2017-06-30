@@ -15,12 +15,8 @@
 package gles
 
 import (
-	"context"
-
 	"github.com/google/gapid/core/data/deep"
 	"github.com/google/gapid/gapis/atom"
-	"github.com/google/gapid/gapis/atom/atom_pb"
-	"github.com/google/gapid/gapis/gfxapi/gles/gles_pb"
 )
 
 // ErrorState is an atom extra used to describe the GLES error state after
@@ -28,13 +24,6 @@ import (
 type ErrorState struct {
 	TraceDriversGlError GLenum
 	InterceptorsGlError GLenum
-}
-
-func (s *ErrorState) Convert(ctx context.Context, out atom_pb.Handler) error {
-	return out(ctx, &gles_pb.ErrorState{
-		TraceDriversGlError: uint32(s.TraceDriversGlError),
-		InterceptorsGlError: uint32(s.InterceptorsGlError),
-	})
 }
 
 // FindProgramInfo searches for the ProgramInfo in the extras, returning the

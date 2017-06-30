@@ -109,9 +109,6 @@ protected:
 
     typedef std::unordered_set<core::Id> IdSet;
 
-    // onThreadSwitched is invoked by enter() whenever the current thread changes.
-    virtual void onThreadSwitched(CallObserver* observer, uint64_t threadID) = 0;
-
     // make constructs and returns a Slice backed by a new pool.
     template<typename T>
     inline Slice<T> make(uint64_t count) const;
@@ -137,16 +134,16 @@ protected:
     void abort();
 
     // onPostDrawCall is after any command annotated with @DrawCall
-    inline virtual void onPostDrawCall(uint8_t) {}
+    inline virtual void onPostDrawCall(CallObserver*, uint8_t) {}
 
     // onPreStartOfFrame is before any command annotated with @StartOfFrame
-    inline virtual void onPreStartOfFrame(uint8_t) {}
+    inline virtual void onPreStartOfFrame(CallObserver*, uint8_t) {}
 
     // onPostStrartOfFrame is after any command annotated with @StartOfFrame
     inline virtual void onPostStartOfFrame(CallObserver* observer) {}
 
     // onPreEndOfFrame is before any command annotated with @EndOfFrame
-    inline virtual void onPreEndOfFrame(uint8_t) {}
+    inline virtual void onPreEndOfFrame(CallObserver*, uint8_t) {}
 
     // onPostEndOfFrame is after any command annotated with @EndOfFrame
     inline virtual void onPostEndOfFrame(CallObserver* observer) {}
@@ -163,20 +160,6 @@ protected:
 
     // The output stream encoder.
     PackEncoder::SPtr mEncoder;
-
-    // A counter that is incremented each time a graphics command starts or
-    // ends. The first command start gets a value of 0 for its starting command
-    // counter value.
-    uint64_t mCommandStartEndCounter;
-
-    // The expected counter value for the starting of the next command. This
-    // equals the counter value of the last command ending plus one. This value
-    // starts at 0 before any atoms have been sent.
-    uint64_t mExpectedNextCommandStartCounterValue;
-
-    // Used by the generated code to indicate that the API file compute t as the
-    // return for this call. The actual return value comes from the driver.
-    template <typename T> void setExpectedReturn(const T& t);
 
 #ifdef COHERENT_TRACKING_ENABLED
     TrackMemory::MemoryTracker mMemoryTracker;
@@ -195,6 +178,7 @@ private:
 
     // The mutex that should be locked for the duration of each of the intercepted commands.
     core::Mutex mMutex;
+
     // True if we should observe the application pool.
     bool mObserveApplicationPool;
 

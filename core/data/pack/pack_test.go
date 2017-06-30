@@ -31,27 +31,29 @@ func TestReaderWriter(t *testing.T) {
 
 	data := []struct {
 		msg proto.Message
+		grp uint64
 	}{
-		{&testprotos.MsgA{F32: 1, U32: 2, S32: 3, Str: "four"}},
-		{&testprotos.MsgB{F64: 2, U64: 3, S64: 4, Bool: false}},
-		{&testprotos.MsgA{F32: 3, U32: 4, S32: 5, Str: "six"}},
-		{&testprotos.MsgB{F64: 4, U64: 5, S64: 6, Bool: true}},
+		{&testprotos.MsgA{F32: 1, U32: 2, S32: 3, Str: "four"}, 0},
+		{&testprotos.MsgB{F64: 2, U64: 3, S64: 4, Bool: false}, 1},
+		{&testprotos.MsgA{F32: 3, U32: 4, S32: 5, Str: "six"}, 0},
+		{&testprotos.MsgB{F64: 4, U64: 5, S64: 6, Bool: true}, 2},
 	}
 
 	w, err := pack.NewWriter(buf)
 	assert.For(ctx, "NewWriter").ThatError(err).Succeeded()
 	for _, data := range data {
-		err := w.Marshal(data.msg)
-		assert.For(ctx, "Marshal(%+v)", data.msg).ThatError(err).Succeeded()
+		err := w.Marshal(data.msg, data.grp)
+		assert.For(ctx, "Marshal(%+v, %v)", data.msg, data.grp).ThatError(err).Succeeded()
 	}
 
 	r, err := pack.NewReader(buf)
 	assert.For(ctx, "NewReader").ThatError(err).Succeeded()
 	for _, data := range data {
-		msg, err := r.Unmarshal()
-		if !assert.For(ctx, "Unmarshal(%+v)", data.msg).ThatError(err).Succeeded() {
+		msg, grp, err := r.Unmarshal()
+		if !assert.For(ctx, "Unmarshal(%+v, %v)", data.msg, data.grp).ThatError(err).Succeeded() {
 			return
 		}
-		assert.For(ctx, "Unmarshal(%+v).msg", data.msg).That(msg).DeepEquals(data.msg)
+		assert.For(ctx, "Unmarshal(%+v, %v).msg", data.msg, data.grp).That(msg).DeepEquals(data.msg)
+		assert.For(ctx, "Unmarshal(%+v, %v).grp", data.msg, data.grp).That(grp).Equals(data.grp)
 	}
 }

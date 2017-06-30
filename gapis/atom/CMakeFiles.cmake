@@ -36,7 +36,6 @@ set(files
     range.go
     range_list.go
     registry.go
-    resource.go
     service.go
     service_test.go
     writer.go

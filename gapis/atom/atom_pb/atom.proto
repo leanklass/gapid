@@ -17,8 +17,11 @@ syntax = "proto3";
 package atom_pb;
 // cc_package
 
-// Invoke is the atom that marks the invocation point in the set of atoms for a command.
-message Invoke {}
+message CommandStart {
+    uint32 thread = 1;
+}
+
+message CommandEnd {}
 
 // Aborted is an extra used to mark atoms which did not finish execution.
 // This can be expected (e.g. GL error), or unexpected (failed assertion).
@@ -49,17 +52,4 @@ message FramebufferObservation {
     uint32 DataHeight = 4;
     // The RGBA color-buffer data
     bytes Data = 5;
-}
-
-// CommandCounter holds the counter value of the begining and end of an API
-// command. It should only be sent for the first completed graphics command, or
-// for any graphics command which overlaps the startup or termination of
-// another graphics command. Unless this is the first completed graphics
-// command, CounterAtEnd-CounterAtBegin should never be 1. We expect uses to
-// be relatively rare.
-message CommandCounter {
-	// counter value at the begain of an API command.
-    uint64 CounterAtBegin = 1;
-	// counter value at the end of an API command.
-    uint64 CounterAtEnd = 2;
 }

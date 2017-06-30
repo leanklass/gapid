@@ -50,6 +50,7 @@
       {{range $p := $.FullParameters}}
         {{Template "Proto.Entry" "Param" $p "Type" (TypeOf $p)}}
       {{end}}
+      uint64 thread = {{Inc "ProtoID"}};
     «}¶
   {{end}}
 {{end}}

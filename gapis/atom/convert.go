@@ -14,139 +14,63 @@
 
 package atom
 
-import (
-	"context"
+import "fmt"
 
-	"github.com/google/gapid/core/data/protoconv"
-	"github.com/google/gapid/core/log"
-	"github.com/google/gapid/gapis/atom/atom_pb"
-	"github.com/google/gapid/gapis/gfxapi/core/core_pb"
-)
-
-// ProtoToAtom returns a function that converts all the storage atoms it is
-// handed, passing the generated live atoms to the handler.
-// You must call this with a nil to flush the final atom.
-func ProtoToAtom(handler func(a Atom)) func(context.Context, atom_pb.Atom) error {
-	var (
-		last         Atom
-		observations *Observations
-		invoked      bool
-		count        int
-	)
-	var threadID uint64
-	return func(ctx context.Context, in atom_pb.Atom) error {
-		count++
-		if in == nil {
-			if last != nil {
-				handler(last)
-			}
-			last = nil
-			return nil
+// Assemble constructs an Atom from serialized component parts.
+func Assemble(parts []interface{}) (Atom, error) {
+	var atom Atom
+	for _, part := range parts {
+		if a, ok := part.(Atom); ok {
+			atom = a
+			break
 		}
-
-		if in, ok := in.(*core_pb.SwitchThread); ok {
-			threadID = in.ThreadID
-			return nil
-		}
-
-		out, err := protoconv.ToObject(ctx, in)
-		if err != nil {
-			return err
-		}
-		switch out := out.(type) {
+	}
+	if atom == nil {
+		return nil, fmt.Errorf("Atom not found")
+	}
+	var invoked bool
+	for _, part := range parts {
+		switch part := part.(type) {
 		case Atom:
-			if last != nil {
-				handler(last)
-			}
-			last = out
-			invoked = false
-			observations = nil
-			out.SetThread(threadID)
+			invoked = true
 
 		case Observation:
-			if observations == nil {
-				observations = &Observations{}
-				e := last.Extras()
-				if e == nil {
-					return log.Errf(ctx, nil, "Not allowed extras %T:%v", last, last)
-				}
-				*e = append(*e, observations)
-			}
+			observations := atom.Extras().GetOrAppendObservations()
 			if !invoked {
-				observations.Reads = append(observations.Reads, out)
+				observations.Reads = append(observations.Reads, part)
 			} else {
-				observations.Writes = append(observations.Writes, out)
+				observations.Writes = append(observations.Writes, part)
 			}
-		case *invokeMarker:
-			invoked = true
 		case Extra:
-			e := last.Extras()
-			if e == nil {
-				return log.Errf(ctx, nil, "Not allowed extras %T:%v", last, last)
-			}
-			*e = append(*e, out)
+			atom.Extras().Add(part)
+
 		default:
-			return log.Errf(ctx, nil, "Unhandled type during conversion %T:%v", out, out)
+			return nil, fmt.Errorf("Unhandled type during conversion %T:%v", part, part)
 		}
-		return nil
 	}
+	return atom, nil
 }
 
-// AtomToProto returns a function that converts all the atoms it is handed,
-// passing the generated proto atoms to the handler.
-func AtomToProto(handler func(a atom_pb.Atom)) func(context.Context, Atom) error {
-	var threadID uint64
-	return func(ctx context.Context, in Atom) error {
-		if in.Thread() != threadID {
-			threadID = in.Thread()
-			handler(&core_pb.SwitchThread{ThreadID: threadID})
+// Disassemble returns the component parts of an Atom for encoding.
+func Disassemble(a Atom) ([]interface{}, error) {
+	var out []interface{}
+	extras := a.Extras()
+	observations := extras.Observations()
+	for _, e := range extras.All() {
+		if e != observations {
+			out = append(out, e)
 		}
-		out, err := protoconv.ToProto(ctx, in)
-		if err != nil {
-			return err
-		}
-		handler(out)
-
-		for _, e := range in.Extras().All() {
-			switch e := e.(type) {
-			case *Observations:
-				for _, o := range e.Reads {
-					p, err := protoconv.ToProto(ctx, o)
-					if err != nil {
-						return err
-					}
-					handler(p)
-				}
-				handler(atom_pb.InvokeMarker)
-				for _, o := range e.Writes {
-					p, err := protoconv.ToProto(ctx, o)
-					if err != nil {
-						return err
-					}
-					handler(p)
-				}
-			default:
-				p, err := protoconv.ToProto(ctx, e)
-				if err != nil {
-					return err
-				}
-				handler(p)
-			}
-		}
-
-		return nil
 	}
-}
-
-type invokeMarker struct{}
-
-func init() {
-	protoconv.Register(
-		func(ctx context.Context, a *invokeMarker) (*atom_pb.Invoke, error) {
-			return &atom_pb.Invoke{}, nil
-		},
-		func(ctx context.Context, a *atom_pb.Invoke) (*invokeMarker, error) {
-			return &invokeMarker{}, nil
-		},
-	)
+	if observations != nil {
+		for _, o := range observations.Reads {
+			out = append(out, o)
+		}
+		out = append(out, a)
+		for _, o := range observations.Writes {
+			out = append(out, o)
+		}
+	} else {
+		out = append(out, a)
+	}
+	return out, nil
 }

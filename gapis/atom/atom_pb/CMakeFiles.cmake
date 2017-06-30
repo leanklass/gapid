@@ -18,11 +18,10 @@
 # build and the file will be recreated, check in the new version.
 
 set(files
-    atom.go
     atom.pb.go
     atom.proto
     doc.go
 )
 set(dirs
-    
+
 )

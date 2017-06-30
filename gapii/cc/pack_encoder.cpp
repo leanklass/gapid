@@ -18,6 +18,8 @@
 #include "pack_encoder.h"
 #include "core/data/pack/pack.pb.h"
 
+#include <core/cc/lock.h>
+#include <core/cc/mutex.h>
 #include <core/cc/stream_writer.h>
 
 #include <google/protobuf/descriptor.pb.h>
@@ -40,11 +42,12 @@ class PackEncoderImpl : public gapii::PackEncoder {
 public:
     PackEncoderImpl(std::shared_ptr<core::StreamWriter> output);
 
-    void message(const ::google::protobuf::Message* msg) override;
+    void message(const ::google::protobuf::Message* msg, uint64_t group) override;
+    uint64_t acquireGroup() override;
+    void releaseGroup(uint64_t) override;
 
 private:
     void writeType(const ::google::protobuf::Descriptor* desc);
-    void writeSection(uint64_t tag, const std::string& name, const ::google::protobuf::Message* msg);
     void flushChunk();
     void writeString(const std::string& str);
     void writeVarint32(uint32_t value);
@@ -52,43 +55,61 @@ private:
     void writeVarintDirect(uint64_t value);
 
     std::unordered_map<const ::google::protobuf::Descriptor*, uint32_t> mIds;
-
+    std::vector<uint64_t> mFreeGroups;
+    uint64_t mNextGroup;
     std::string mBuffer; // Flushes to mWriter
     std::shared_ptr<core::StreamWriter> mWriter;
+    core::Mutex mMutex;
 };
 
 PackEncoderImpl::PackEncoderImpl(std::shared_ptr<core::StreamWriter> writer)
-        : mWriter(writer) {
+        : mWriter(writer)
+        , mNextGroup(1) {
+
     writer->write(magic, sizeof(magic) - 1);
+
     pack::Header header;
     header.mutable_version()->set_major(1);
-
     header.SerializeToString(&mBuffer);
     flushChunk();
 }
 
-void PackEncoderImpl::message(const Message* msg) {
+void PackEncoderImpl::message(const Message* msg, uint64_t groupId) {
+    core::Lock<core::Mutex> lock(&mMutex);
+
     auto desc = msg->GetDescriptor();
 
     auto insert = mIds.insert(std::make_pair(desc, mIds.size() + 1));
     if (insert.second) {
         writeType(desc);
     }
-    writeSection(insert.first->second, "", msg);
+    writeVarint(insert.first->second);
+    writeVarint(groupId);
+    msg->AppendToString(&mBuffer);
+    flushChunk();
+}
+
+uint64_t PackEncoderImpl::acquireGroup() {
+    core::Lock<core::Mutex> lock(&mMutex);
+    if (mFreeGroups.size() > 0) {
+        auto out = mFreeGroups.back();
+        mFreeGroups.pop_back();
+        return out;
+    }
+    return mNextGroup++;
+}
+
+void PackEncoderImpl::releaseGroup(uint64_t groupId) {
+    core::Lock<core::Mutex> lock(&mMutex);
+    mFreeGroups.push_back(groupId);
 }
 
 void PackEncoderImpl::writeType(const Descriptor* desc) {
     DescriptorProto msg;
     desc->CopyTo(&msg);
-    writeSection(specialSection, desc->full_name(), &msg);
-}
-
-void PackEncoderImpl::writeSection(uint64_t tag, const std::string& name, const Message* msg) {
-    writeVarint(tag);
-    if (name.size() != 0) {
-        writeString(name);
-    }
-    msg->AppendToString(&mBuffer);
+    writeVarint(specialSection);
+    writeString(desc->full_name());
+    msg.AppendToString(&mBuffer);
     flushChunk();
 }
 
@@ -124,7 +145,9 @@ void PackEncoderImpl::writeVarintDirect(uint64_t value) {
 // PackEncoderNoop is a no-op implementation of the PackEncoder interface.
 class PackEncoderNoop : public gapii::PackEncoder {
 public:
-    void message(const ::google::protobuf::Message* msg) override {}
+    void message(const ::google::protobuf::Message* msg, uint64_t groupId) override {}
+    uint64_t acquireGroup() override { return 0; }
+    void releaseGroup(uint64_t) override {}
 };
 
 } // anonymous namespace

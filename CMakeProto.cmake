@@ -38,8 +38,6 @@ protoc_go("github.com/google/gapid/gapis/atom/test/test_pb" "gapis/atom/test/tes
 protoc_cc("gapis/atom/atom_pb" "gapis/atom/atom_pb" "atom.proto")
 protoc_go("github.com/google/gapid/gapis/capture" "gapis/capture" "capture.proto")
 protoc_cc("gapis/capture" "gapis/capture" "capture.proto")
-protoc_go("github.com/google/gapid/gapis/gfxapi/core/core_pb" "gapis/gfxapi/core/core_pb" "api.proto")
-protoc_cc("gapis/gfxapi/core/core_pb" "gapis/gfxapi/core/core_pb" "api.proto")
 protoc_go("github.com/google/gapid/gapis/gfxapi" "gapis/gfxapi" "gfxapi.proto")
 protoc_java("gapis/gfxapi" "gfxapi.proto" "com/google/gapid/proto/service/gfxapi/GfxAPI")
 protoc_cc("gapis/gfxapi" "gapis/gfxapi" "gfxapi.proto")

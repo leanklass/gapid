@@ -33,3 +33,11 @@ message Header {
 	// The ABI used by the traced process.
 	device.ABI abi = 2;
 }
+
+// Resource embeds a blob of memory into the capture.
+message Resource {
+	// The resource identifier holding the memory that was observed.
+	bytes id = 1;
+	// The resource data
+	bytes data = 2;
+}

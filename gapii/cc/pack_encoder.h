@@ -43,7 +43,13 @@ public:
     typedef std::shared_ptr<PackEncoder> SPtr;
 
     // message encodes the protobuf message.
-    virtual void message(const ::google::protobuf::Message* msg) = 0;
+    virtual void message(const ::google::protobuf::Message* msg, uint64_t groupId) = 0;
+
+    // acquireGroup returns a new, currently unusued group identifier starting from 1.
+    virtual uint64_t acquireGroup() = 0;
+
+    // releaseGroup returns a group identifier previously returned by acquireGroup.
+    virtual void releaseGroup(uint64_t) = 0;
 
     // create returns a PackEncoder::SPtr that writes to output.
     static SPtr create(std::shared_ptr<core::StreamWriter> output);

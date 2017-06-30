@@ -177,6 +177,8 @@ func (a api) Replay(
 		log.E(ctx, "Error creating compatability transform: %v", err)
 	}
 
+	transforms.Add(&bindRendererOnContextSwitch{})
+
 	// Cleanup
 	transforms.Add(&destroyResourcesAtEOS{})
 

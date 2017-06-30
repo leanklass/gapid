@@ -58,7 +58,7 @@ func init() {
 // New returns a path to a new capture with the given name, header and atoms.
 // The new capture is stored in the database.
 func New(ctx context.Context, name string, header *Header, atoms []atom.Atom) (*path.Capture, error) {
-	c, err := build(ctx, name, header, atoms)
+	c, err := build(ctx, name, header, atoms, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -114,12 +114,6 @@ func (c *Capture) Service(ctx context.Context, p *path.Capture) *service.Capture
 		Apis:         apis,
 		Observations: observations,
 	}
-}
-
-// AtomsImportHandler is the interface optionally implements by APIs that want
-// to process the atom stream on import.
-type AtomsImportHandler interface {
-	TransformAtomStream(context.Context, []atom.Atom) ([]atom.Atom, error)
 }
 
 // Captures returns all the captures stored by the database by identifier.
@@ -184,13 +178,9 @@ func (c *Capture) Export(ctx context.Context, w io.Writer) error {
 		return err
 	}
 
-	writeMsg := func(ctx context.Context, a atom_pb.Atom) error { return write.Marshal(a) }
-
-	if err := writeMsg(ctx, c.Header); err != nil {
+	if err := write.Marshal(c.Header, 0); err != nil {
 		return err
 	}
-
-	writeAtom := atom.AtomToProto(func(a atom_pb.Atom) { writeMsg(ctx, a) })
 
 	// IDs seen, so we can avoid encoding the same resource data multiple times.
 	seen := map[id.ID]bool{}
@@ -203,12 +193,11 @@ func (c *Capture) Export(ctx context.Context, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		err = writeAtom(ctx, &atom.Resource{ID: o.ID, Data: data.([]uint8)})
 		seen[o.ID] = true
-		return err
+		return write.Marshal(&Resource{Id: o.ID[:], Data: data.([]uint8)}, 0)
 	}
 
-	for _, a := range c.Atoms {
+	for i, a := range c.Atoms {
 		if observations := a.Extras().Observations(); observations != nil {
 			for _, r := range observations.Reads {
 				if err := encodeObservation(r); err != nil {
@@ -221,9 +210,22 @@ func (c *Capture) Export(ctx context.Context, w io.Writer) error {
 				}
 			}
 		}
-		if err := writeAtom(ctx, a); err != nil {
+
+		parts, err := atom.Disassemble(a)
+		if err != nil {
 			return err
 		}
+
+		group := uint64(i)
+		write.Marshal(&atom_pb.CommandStart{}, group)
+		for _, part := range parts {
+			msg, err := protoconv.ToProto(ctx, part)
+			if err != nil {
+				return err
+			}
+			write.Marshal(msg, group)
+		}
+		write.Marshal(&atom_pb.CommandEnd{}, group)
 	}
 
 	return nil
@@ -247,22 +249,52 @@ func fromProto(ctx context.Context, r *Record) (*Capture, error) {
 	}
 
 	atoms := []atom.Atom{}
-	convert := atom.ProtoToAtom(func(a atom.Atom) { atoms = append(atoms, a) })
+	parts := map[uint64][]interface{}{}
+	idmap := map[id.ID]id.ID{}
+
 	var header *Header
 	for {
-		msg, err := reader.Unmarshal()
+		msg, groupID, err := reader.Unmarshal()
 		if errors.Cause(err) == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, log.Err(ctx, err, "Failed to unmarshal")
+			return nil, log.Err(ctx, err, "Failed to unmarshal proto")
 		}
-		if h, ok := msg.(*Header); ok {
-			header = h
-			continue
-		}
-		if err := convert(ctx, msg); err != nil {
-			return nil, err
+
+		switch msg := msg.(type) {
+		case *Header:
+			header = msg
+
+		case *Resource:
+			var msgID id.ID
+			copy(msgID[:], msg.Id)
+			id, err := database.Store(ctx, msg.Data)
+			if err != nil {
+				return nil, err
+			}
+			if _, dup := idmap[msgID]; dup {
+				return nil, log.Errf(ctx, nil, "Duplicate resource with ID: %v", msgID)
+			}
+			idmap[msgID] = id
+
+		case *atom_pb.CommandStart:
+			// TODO: Use this for ordering commands by start.
+
+		case *atom_pb.CommandEnd:
+			a, err := atom.Assemble(parts[groupID])
+			if err != nil {
+				return nil, log.Err(ctx, err, "Failed to assemble atom")
+			}
+			atoms = append(atoms, a)
+			delete(parts, groupID)
+
+		default:
+			obj, err := protoconv.ToObject(ctx, msg)
+			if err != nil {
+				return nil, log.Err(ctx, err, "Failed to convert proto to object")
+			}
+			parts[groupID] = append(parts[groupID], obj)
 		}
 	}
 
@@ -270,18 +302,12 @@ func fromProto(ctx context.Context, r *Record) (*Capture, error) {
 		return nil, log.Err(ctx, nil, "Capture was missing header chunk")
 	}
 
-	// must invoke the converter with nil to flush the last atom
-	if err := convert(ctx, nil); err != nil {
-		return nil, err
-	}
-
-	return build(ctx, r.Name, header, atoms)
+	return build(ctx, r.Name, header, atoms, idmap)
 }
 
 // build creates a capture from the name, header and atoms.
 // The atoms are inspected for APIs used and observed memory ranges.
-// All resources are extracted placed into the database.
-func build(ctx context.Context, name string, header *Header, atoms []atom.Atom) (*Capture, error) {
+func build(ctx context.Context, name string, header *Header, atoms []atom.Atom, idmap map[id.ID]id.ID) (*Capture, error) {
 	out := &Capture{
 		Name:     name,
 		Header:   header,
@@ -289,7 +315,6 @@ func build(ctx context.Context, name string, header *Header, atoms []atom.Atom) 
 		APIs:     []gfxapi.API{},
 	}
 
-	idmap := map[id.ID]id.ID{}
 	apiSet := map[gfxapi.ID]gfxapi.API{}
 
 	for _, a := range atoms {
@@ -312,44 +337,21 @@ func build(ctx context.Context, name string, header *Header, atoms []atom.Atom) 
 			}
 		}
 
-		switch a := a.(type) {
-		case *atom.Resource:
-			id, err := database.Store(ctx, a.Data)
-			if err != nil {
-				return nil, err
-			}
-			if _, dup := idmap[a.ID]; dup {
-				return nil, log.Errf(ctx, nil, "Duplicate resource with ID: %v", a.ID)
-			}
-			idmap[a.ID] = id
-
-		default:
-			// Replace resource IDs from identifiers generated at capture time to
-			// direct database identifiers. This avoids a database link indirection.
-			if observations != nil {
-				for i, r := range observations.Reads {
-					if id, found := idmap[r.ID]; found {
-						observations.Reads[i].ID = id
-					}
-				}
-				for i, w := range observations.Writes {
-					if id, found := idmap[w.ID]; found {
-						observations.Writes[i].ID = id
-					}
+		// Replace resource IDs from identifiers generated at capture time to
+		// direct database identifiers. This avoids a database link indirection.
+		if observations != nil {
+			for i, r := range observations.Reads {
+				if id, found := idmap[r.ID]; found {
+					observations.Reads[i].ID = id
 				}
 			}
-			out.Atoms = append(out.Atoms, a)
-		}
-	}
-
-	for _, api := range out.APIs {
-		if aih, ok := api.(AtomsImportHandler); ok {
-			var err error
-			out.Atoms, err = aih.TransformAtomStream(ctx, out.Atoms)
-			if err != nil {
-				return nil, err
+			for i, w := range observations.Writes {
+				if id, found := idmap[w.ID]; found {
+					observations.Writes[i].ID = id
+				}
 			}
 		}
+		out.Atoms = append(out.Atoms, a)
 	}
 
 	return out, nil

@@ -20,7 +20,6 @@
 set(files
     api.pb.go
     api.proto
-    doc.go
 )
 set(dirs
     

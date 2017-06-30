@@ -93,6 +93,7 @@
     {{range $v := $.FullParameters}}
       {{Template "Convert.To" "Field" $v "Outer" $proto}}
     {{end}}
+    to.Thread = ϟa.thread¶
     return to¶
   «}¶
   ¶
@@ -102,6 +103,7 @@
     {{range $v := $.FullParameters}}
       {{Template "Convert.From" "Field" $v "Outer" $proto}}
     {{end}}
+    ϟa.thread = from.Thread¶
     return ϟa¶
   «}¶
 {{end}}

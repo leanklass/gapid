@@ -196,17 +196,18 @@
       auto call = [{{Macro "CallCapture" $}}] {
         called = true;
         {{if GetAnnotation $ "StartOfFrame"}}
-          onPreStartOfFrame({{Global "ApiIndex"}});
+          onPreStartOfFrame(observer, {{Global "ApiIndex"}});
         {{end}}
         {{if GetAnnotation $ "EndOfFrame"}}
-          onPreEndOfFrame({{Global "ApiIndex"}});
+          onPreEndOfFrame(observer, {{Global "ApiIndex"}});
         {{end}}
 
-        observer->invoke();
+        observer->observePending();
 
         {{if (GetAnnotation $ "blocking")}}
           unlock();
         {{end}}
+
         {{/* Perform the call */}}
         {{if not (GetAnnotation $ "synthetic")}}
           {{if not (IsVoid $.Return.Type)}}result = §{{end}}
@@ -218,47 +219,36 @@
             mImports.{{Template "CmdName" $}}({{Template "C++.CallArguments" $}});
           {{end}}
         {{end}}
+¶
+        auto c = cmd::{{.Name}}{§
+        {{range $i, $p := $.FullParameters}}
+          {{if $i}}, {{end}}{{$p.Name}}§
+        {{end}}
+        };
+        observer->encode(c.toProto());
+¶
         {{if (GetAnnotation $ "blocking")}}
           lock(observer, "Tracing blocking atom: {{$name}} locks again.");
         {{end}}
+
         onPostFence(observer);
       };
-¶
-      uint64_t counter_at_begin = mCommandStartEndCounter++;
 ¶
       try {
         do {
           {{Template "C++.Block" $.Block}}
         } while(false);
       } catch (gapii::AbortException& e) {
-        if (!called) {
-          call(); // abort() was called before the fence.
-        }
+        if (!called) { call(); } // abort() was called before the fence.
       }
-      uint64_t counter_at_end = mCommandStartEndCounter++;
 ¶
-      if (counter_at_end > counter_at_begin + 1 ||
-          counter_at_begin != mExpectedNextCommandStartCounterValue) {
-
-        auto counter = new atom_pb::CommandCounter();
-        counter->set_counteratbegin(counter_at_begin);
-        counter->set_counteratend(counter_at_end);
-        observer->addExtra(counter);
-      }
-      mExpectedNextCommandStartCounterValue = counter_at_end + 1;
+      observer->observePending();
 ¶
-      auto c = cmd::{{.Name}}{§
-      {{range $i, $p := $.FullParameters}}
-        {{if $i}}, {{end}}{{$p.Name}}§
-      {{end}}
-      };
-      observer->encodeAndDeleteCommand(c.toProto());
-
-      {{if GetAnnotation $ "DrawCall"}}onPostDrawCall({{Global "ApiIndex"}});{{end}}
+      {{if GetAnnotation $ "DrawCall"}}onPostDrawCall(observer, {{Global "ApiIndex"}});{{end}}
       {{if GetAnnotation $ "StartOfFrame"}}onPostStartOfFrame(observer);{{end}}
       {{if GetAnnotation $ "EndOfFrame"}}onPostEndOfFrame(observer);{{end}}
-¶
-      {{if not (IsVoid $.Return.Type)}}¶
+
+      {{if not (IsVoid $.Return.Type)}}
         return result;
       {{end}}
     }

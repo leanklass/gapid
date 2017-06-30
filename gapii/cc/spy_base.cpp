@@ -29,24 +29,19 @@ namespace gapii {
 
 SpyBase::SpyBase()
     : mObserveApplicationPool(true)
-    , mCommandStartEndCounter(0)
-    , mExpectedNextCommandStartCounterValue(0)
     , mNullEncoder(PackEncoder::noop())
     , mWatchedApis(0xFFFFFFFF)
 #ifdef COHERENT_TRACKING_ENABLED
     , mMemoryTracker()
 #endif // TARGET_OS
 {
-    mCurrentThread = core::Thread::current().id();
 }
 
 void SpyBase::init(CallObserver* observer, PackEncoder::SPtr encoder) {
     auto threadID = core::Thread::current().id();
     mEncoder = encoder;
     mObserveApplicationPool = true;
-    mCurrentThread = threadID;
     mIsSuspended = false;
-    onThreadSwitched(observer, threadID);
 }
 
 bool SpyBase::try_to_enter() {
@@ -64,13 +59,6 @@ void SpyBase::exit() {
 void SpyBase::lock(CallObserver* observer, const char* name) {
     mMutex.lock();
     observer->setCurrentCommandName(name);
-
-    auto threadID = core::Thread::current().id();
-    if (threadID != mCurrentThread) {
-        GAPID_DEBUG("Changing threads: %" PRIu64 "-> %" PRIu64, mCurrentThread, threadID);
-        mCurrentThread = threadID;
-        onThreadSwitched(observer, threadID);
-    }
 }
 
 void SpyBase::unlock() {

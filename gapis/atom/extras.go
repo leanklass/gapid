@@ -18,6 +18,7 @@ package atom
 import (
 	"context"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/google/gapid/core/data/protoconv"
 	"github.com/google/gapid/gapis/atom/atom_pb"
 )
@@ -101,7 +102,7 @@ func WithExtras(a Atom, extras ...Extra) Atom {
 }
 
 // Convert calls the Convert method on all the extras in the list.
-func (e *Extras) Convert(ctx context.Context, out atom_pb.Handler) error {
+func (e *Extras) Convert(ctx context.Context, out func(context.Context, proto.Message) error) error {
 	for _, o := range e.All() {
 		m, err := protoconv.ToProto(ctx, o)
 		if err != nil {

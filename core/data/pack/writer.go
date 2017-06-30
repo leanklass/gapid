@@ -20,17 +20,14 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-type (
-	// Writer is the type for a pack file writer.
-	// They should only be constructed by NewWriter.
-	Writer struct {
-		// Types is the set of registered types encoded through this writer.
-		Types   *Types
-		buf     *proto.Buffer
-		sizebuf *proto.Buffer
-		to      io.Writer
-	}
-)
+// Writer is the type for a pack file writer.
+// They should only be constructed by NewWriter.
+type Writer struct {
+	types   *Types
+	buf     *proto.Buffer
+	sizebuf *proto.Buffer
+	to      io.Writer
+}
 
 // NewWriter constructs and returns a new Writer that writes to the supplied
 // output stream.
@@ -38,7 +35,7 @@ type (
 // stream.
 func NewWriter(to io.Writer) (*Writer, error) {
 	w := &Writer{
-		Types:   NewTypes(),
+		types:   NewTypes(),
 		buf:     proto.NewBuffer(make([]byte, 0, initalBufferSize)),
 		sizebuf: proto.NewBuffer(make([]byte, 0, maxVarintSize)),
 		to:      to,
@@ -55,18 +52,36 @@ func NewWriter(to io.Writer) (*Writer, error) {
 
 // Marshal writes a new object to the packfile, preceding it with a
 // type entry if needed.
-func (w *Writer) Marshal(msg proto.Message) error {
-	entry, added := w.Types.AddMessage(msg)
+func (w *Writer) Marshal(msg proto.Message, group uint64) error {
+	entry, added := w.types.AddMessage(msg)
 	if added {
 		if err := w.writeType(entry); err != nil {
 			return err
 		}
 	}
-	return w.writeSection(entry.Index, "", msg)
+	if err := w.buf.EncodeVarint(entry.Index); err != nil {
+		return err
+	}
+	if err := w.buf.EncodeVarint(group); err != nil {
+		return err
+	}
+	if err := w.buf.Marshal(msg); err != nil {
+		return err
+	}
+	return w.flushChunk()
 }
 
 func (w *Writer) writeType(t Type) error {
-	return w.writeSection(specialSection, t.Name, t.Descriptor)
+	if err := w.buf.EncodeVarint(specialSection); err != nil {
+		return err
+	}
+	if err := w.buf.EncodeStringBytes(t.Name); err != nil {
+		return err
+	}
+	if err := w.buf.Marshal(t.Descriptor); err != nil {
+		return err
+	}
+	return w.flushChunk()
 }
 
 func (w *Writer) writeMagic() error {
@@ -76,21 +91,6 @@ func (w *Writer) writeMagic() error {
 
 func (w *Writer) writeHeader(h *Header) error {
 	if err := w.buf.Marshal(h); err != nil {
-		return err
-	}
-	return w.flushChunk()
-}
-
-func (w *Writer) writeSection(tag uint64, name string, msg proto.Message) error {
-	if err := w.buf.EncodeVarint(tag); err != nil {
-		return err
-	}
-	if name != "" {
-		if err := w.buf.EncodeStringBytes(name); err != nil {
-			return err
-		}
-	}
-	if err := w.buf.Marshal(msg); err != nil {
 		return err
 	}
 	return w.flushChunk()

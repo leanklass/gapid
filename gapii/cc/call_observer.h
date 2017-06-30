@@ -65,7 +65,10 @@ public:
     // released when CallObserver is destructed.
     // TODO(qining): Implementation for a real thread-local allocator is
     // required.
-    core::DefaultScratchAllocator* getScratch() { return &mScratch; }
+    inline core::DefaultScratchAllocator* getScratch() { return &mScratch; }
+
+    // getThreadId returns the current executing thread identifier.
+    inline uint64_t getThreadId() const { return mThreadId; }
 
     // read is called to make a read memory observation of size bytes, starting
     // at base. It only records the range of the read memory, the actual
@@ -76,12 +79,6 @@ public:
     // starting at base. It only records the range of the write memory, the
     // actual copying of the data is deferred until the data is to be sent.
     void write(const void* base, uint64_t size);
-
-    // invoke should be called when the imported function is called (at the
-    // fence). It observes all the pending read memory observations and inserts
-    // a atom_pb::Invoke to mExtras to separate read observations from write
-    // observations.
-    void invoke();
 
     // read records the memory range for the given slice as a read operation.
     // The actual copying of the data is deferred until the data is to be sent.
@@ -124,20 +121,15 @@ public:
     // slice is observed as a read operation.
     inline std::string string(const Slice<char>& slice);
 
-    // encodeAndDeleteCommand encodes the command to the PackEncoder along with
-    // all extras, and then deletes the message.
-    void encodeAndDeleteCommand(::google::protobuf::Message* cmd);
-
-    void addExtra(::google::protobuf::Message* extra) {
-        mExtras.append(extra);
-    }
-
-private:
-    // observe observes all the pending memory observations, populating the
-    // mObservations vector.
+    // observe observes all the pending memory observations, encoding them to
+    // the PackEncoder.
     // The list of pending memory observations is cleared on returning.
     void observePending();
 
+    // encode encodes the message to the PackEncoder and then deletes the message.
+    void encode(::google::protobuf::Message* cmd);
+
+private:
     // shouldObserve returns true if the given slice is located in application
     // pool and we are supposed to observe application pool.
     template <class T>
@@ -169,14 +161,17 @@ private:
     // The list of pending reads or writes observations that are yet to be made.
     core::IntervalList<uintptr_t> mPendingObservations;
 
-    // The list of pending extras to be appended to the atom.
-    core::Vector<::google::protobuf::Message*> mExtras;
-
     // Record GL error which was raised during this call.
     GLenum_Error mError;
 
     // The current API that this call-observer is observing.
-    uint8_t mApi;
+    const uint64_t mThreadId;
+
+    // The current API that this call-observer is observing.
+    const uint8_t mApi;
+
+    // The encoder group ID used for encoding this call.
+    const uint64_t mEncoderGroup;
 };
 
 template <typename T>

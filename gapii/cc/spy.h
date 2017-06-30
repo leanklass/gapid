@@ -61,10 +61,10 @@ class Spy : public GlesSpy, public VulkanSpy {
   GLubyte* glGetString(CallObserver* observer, uint32_t name);
   GLubyte* glGetStringi(CallObserver* observer, uint32_t name, GLuint index);
 
-  void onPostDrawCall(uint8_t api) override;
-  void onPreStartOfFrame(uint8_t api) override;
+  void onPostDrawCall(CallObserver* observer, uint8_t api) override;
+  void onPreStartOfFrame(CallObserver* observer, uint8_t api) override;
   void onPostStartOfFrame(CallObserver* observer) override;
-  void onPreEndOfFrame(uint8_t api) override;
+  void onPreEndOfFrame(CallObserver* observer, uint8_t api) override;
   void onPostEndOfFrame(CallObserver* observer) override;
   void onPostFence(CallObserver* observer) override;
 
@@ -77,12 +77,8 @@ class Spy : public GlesSpy, public VulkanSpy {
     return (symbol == mSymbols.end()) ? nullptr : symbol->second;
   }
 
-  void setFakeGlError(GLenum_Error error);
+  void setFakeGlError(CallObserver* observer, GLenum_Error error);
   uint32_t glGetError(CallObserver* observer);
-
- protected:
-  virtual void onThreadSwitched(CallObserver* observer,
-                                uint64_t threadID) override;
 
  private:
   Spy();
@@ -93,12 +89,12 @@ class Spy : public GlesSpy, public VulkanSpy {
   // immediately, otherwise the atom will be cached as pending framebuffer
   // observations and should be encoded later. By default |pendMessaging| is
   // set to false.
-  void observeFramebuffer(uint8_t api, bool pendMessaging = false);
+  void observeFramebuffer(CallObserver* observer, uint8_t api, bool pendMessaging = false);
 
   // getFramebufferAttachmentSize attempts to retrieve the currently bound
   // framebuffer's color buffer dimensions, returning true on success or
   // false if the dimensions could not be retrieved.
-  bool getFramebufferAttachmentSize(uint32_t& width, uint32_t& height);
+  bool getFramebufferAttachmentSize(CallObserver* observer, uint32_t& width, uint32_t& height);
 
   std::shared_ptr<gapii::PackEncoder> mEncoder;
   std::unordered_map<std::string, void*> mSymbols;

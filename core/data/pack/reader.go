@@ -23,23 +23,20 @@ import (
 	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 )
 
-type (
-	// Reader is the type for a pack file reader.
-	// They should only be constructed by NewReader.
-	Reader struct {
-		// Types is the set of registered types this reader will decode.
-		Types *Types
-		buf   []byte
-		next  int
-		pb    *proto.Buffer
-		from  io.Reader
-		total int
-	}
+// Reader is the type for a pack file reader.
+// They should only be constructed by NewReader.
+type Reader struct {
+	types *Types
+	buf   []byte
+	next  int
+	pb    *proto.Buffer
+	from  io.Reader
+	total int
+}
 
-	// ErrUnknownType is the error returned by Reader.Unmarshal() when it
-	// encounters an unknown proto type.
-	ErrUnknownType struct{ TypeName string }
-)
+// ErrUnknownType is the error returned by Reader.Unmarshal() when it
+// encounters an unknown proto type.
+type ErrUnknownType struct{ TypeName string }
 
 func (e ErrUnknownType) Error() string { return fmt.Sprintf("Unknown proto type '%s'", e.TypeName) }
 
@@ -60,7 +57,7 @@ func NewReader(from io.Reader) (*Reader, error) {
 
 func newReader(from io.Reader) *Reader {
 	r := &Reader{
-		Types: NewTypes(),
+		types: NewTypes(),
 		from:  from,
 	}
 	r.buf = make([]byte, 0, initalBufferSize)
@@ -70,31 +67,35 @@ func newReader(from io.Reader) *Reader {
 
 // Unmarshal reads the next data section from the file, consuming any special
 // sections on the way.
-func (r *Reader) Unmarshal() (proto.Message, error) {
+func (r *Reader) Unmarshal() (msg proto.Message, group uint64, err error) {
 	for {
 		tag, err := r.readSection()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if tag != specialSection {
-			typ, ok := r.Types.Get(tag)
+			typ, ok := r.types.Get(tag)
 			if !ok {
-				return nil, fmt.Errorf("Unknown tag: %v. Type count: %v", tag, r.Types.Count())
+				return nil, 0, fmt.Errorf("Unknown tag: %v. Type count: %v", tag, r.types.Count())
+			}
+			group, err := r.pb.DecodeVarint()
+			if err != nil {
+				return nil, 0, err
 			}
 			msg := reflect.New(typ.Type).Interface().(proto.Message)
 			if err := r.pb.Unmarshal(msg); err != nil {
-				return nil, err
+				return nil, 0, err
 			}
-			return msg, nil
+			return msg, group, nil
 		}
 		if err := r.readType(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 }
 
 func (r *Reader) readType() error {
-	name, err := r.readSectionName()
+	name, err := r.pb.DecodeStringBytes()
 	if err != nil {
 		return err
 	}
@@ -102,7 +103,7 @@ func (r *Reader) readType() error {
 	if err = r.pb.Unmarshal(d); err != nil {
 		return err
 	}
-	t, ok := r.Types.AddName(name)
+	t, ok := r.types.AddName(name)
 	if !ok {
 		return ErrUnknownType{name}
 	}
@@ -143,10 +144,6 @@ func (r *Reader) readSection() (uint64, error) {
 		return 0, err
 	}
 	return r.pb.DecodeVarint()
-}
-
-func (r *Reader) readSectionName() (string, error) {
-	return r.pb.DecodeStringBytes()
 }
 
 func (r *Reader) readChunk() error {

@@ -22,31 +22,29 @@ import (
 	"github.com/google/gapid/core/data/protoutil"
 )
 
-type (
-	// Type is an entry in the map of types stored in a packfile.
-	Type struct {
-		// Name is the cannocial unique name of the type.
-		// This will be the same name as used in the proto registry.
-		Name string
-		// Index is the tag index used for the type in this packfile.
-		Index uint64
-		// Type is the reflection type that maps to this type registry.
-		Type reflect.Type
-		// Descriptor is the proto description of this type, it is packed
-		// into the file and can be used to reflect on the type.
-		Descriptor *descriptor.DescriptorProto
-	}
+// Type is an entry in the map of types stored in a packfile.
+type Type struct {
+	// Name is the cannocial unique name of the type.
+	// This will be the same name as used in the proto registry.
+	Name string
+	// Index is the tag index used for the type in this packfile.
+	Index uint64
+	// Type is the reflection type that maps to this type registry.
+	Type reflect.Type
+	// Descriptor is the proto description of this type, it is packed
+	// into the file and can be used to reflect on the type.
+	Descriptor *descriptor.DescriptorProto
+}
 
-	// Types stores the full type registry for a packfile.
-	// It is exposed so that you can pre-build a cannocial type registry
-	// rather than constructing on demand.
-	Types struct {
-		entries []*Type
-		nextTag uint64
-		byName  map[string]*Type
-		byType  map[reflect.Type]*Type
-	}
-)
+// Types stores the full type registry for a packfile.
+// It is exposed so that you can pre-build a cannocial type registry
+// rather than constructing on demand.
+type Types struct {
+	entries []*Type
+	nextTag uint64
+	byName  map[string]*Type
+	byType  map[reflect.Type]*Type
+}
 
 // NewTypes constructs a new empty type registry.
 func NewTypes() *Types {

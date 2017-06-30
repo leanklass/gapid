@@ -220,7 +220,7 @@ void Spy::writeHeader() {
     capture::Header file_header;
     file_header.set_allocated_device(query::getDeviceInstance(queryPlatformData()));
     file_header.set_allocated_abi(query::currentABI());
-    mEncoder->message(&file_header);
+    mEncoder->message(&file_header, 0);
     query::destroyContext();
 }
 
@@ -274,7 +274,7 @@ std::shared_ptr<StaticContextState> GlesSpy::GetEGLStaticContextState(CallObserv
     std::shared_ptr<StaticContextState> out(new StaticContextState(constants, threadName));
 
     // Store the StaticContextState as an extra.
-    observer->addExtra(out->toProto());
+    observer->encode(out->toProto());
 
     return out;
 }
@@ -341,7 +341,7 @@ std::shared_ptr<DynamicContextState> GlesSpy::GetEGLDynamicContextState(CallObse
     ));
 
     // Store the DynamicContextState as an extra.
-    observer->addExtra(out->toProto());
+    observer->encode(out->toProto());
 
     return out;
 }
@@ -350,25 +350,25 @@ std::shared_ptr<DynamicContextState> GlesSpy::GetEGLDynamicContextState(CallObse
 #undef EGL_GET_CONFIG_ATTRIB
 
 
-void Spy::onPostDrawCall(uint8_t api) {
+void Spy::onPostDrawCall(CallObserver* observer, uint8_t api) {
     if (is_suspended()) {
          return;
     }
     if (mObserveDrawFrequency != 0 && (mNumDraws % mObserveDrawFrequency == 0)) {
         GAPID_DEBUG("Observe framebuffer after draw call %d", mNumDraws);
-        observeFramebuffer(api);
+        observeFramebuffer(observer, api);
     }
     mNumDraws++;
     mNumDrawsPerFrame++;
 }
 
-void Spy::onPreStartOfFrame(uint8_t api) {
+void Spy::onPreStartOfFrame(CallObserver* observer, uint8_t api) {
     if (is_suspended()) {
         return;
     }
     if (mObserveFrameFrequency != 0 && (mNumFrames % mObserveFrameFrequency == 0)) {
         GAPID_DEBUG("Observe framebuffer after frame %d", mNumFrames);
-        observeFramebuffer(api);
+        observeFramebuffer(observer, api);
     }
     GAPID_DEBUG("NumFrames:%d NumDraws:%d NumDrawsPerFrame:%d",
                mNumFrames, mNumDraws, mNumDrawsPerFrame);
@@ -392,7 +392,7 @@ void Spy::onPostStartOfFrame(CallObserver* observer) {
     }
 }
 
-void Spy::onPreEndOfFrame(uint8_t api) {
+void Spy::onPreEndOfFrame(CallObserver* observer, uint8_t api) {
     if (is_suspended()) {
         return;
     }
@@ -405,7 +405,7 @@ void Spy::onPreEndOfFrame(uint8_t api) {
         // vkQueuePresentKHR.  However, the data must be messaged after the
         // vkQueuePresentKHR so the server knows the observed framebuffer is
         // that specific vkQueuePresentKHR.
-        observeFramebuffer(api, api == VulkanSpy::kApiIndex);
+        observeFramebuffer(observer, api, api == VulkanSpy::kApiIndex);
     }
     GAPID_DEBUG("NumFrames:%d NumDraws:%d NumDrawsPerFrame:%d",
                mNumFrames, mNumDraws, mNumDrawsPerFrame);
@@ -415,7 +415,7 @@ void Spy::onPreEndOfFrame(uint8_t api) {
 
 void Spy::onPostEndOfFrame(CallObserver* observer) {
     if (mPendingFramebufferObservation) {
-        mEncoder->message(mPendingFramebufferObservation.get());
+        mEncoder->message(mPendingFramebufferObservation.get(), 0);
         mPendingFramebufferObservation.reset(nullptr);
     }
     if (!is_suspended() && mCaptureFrames >= 1) {
@@ -483,18 +483,18 @@ static bool downsamplePixels(const std::vector<uint8_t>& srcData, uint32_t srcW,
 
 // observeFramebuffer captures the currently bound framebuffer, and writes
 // it to a FramebufferObservation atom.
-void Spy::observeFramebuffer(uint8_t api, bool pendMessaging) {
+void Spy::observeFramebuffer(CallObserver* observer, uint8_t api, bool pendMessaging) {
     uint32_t w = 0;
     uint32_t h = 0;
     std::vector<uint8_t> data;
     switch(api) {
         case GlesSpy::kApiIndex:
-            if (!GlesSpy::observeFramebuffer(&w, &h, &data)) {
+            if (!GlesSpy::observeFramebuffer(observer, &w, &h, &data)) {
                 return;
             }
             break;
         case VulkanSpy::kApiIndex:
-            if (!VulkanSpy::observeFramebuffer(&w, &h, &data)) {
+            if (!VulkanSpy::observeFramebuffer(observer, &w, &h, &data)) {
                 return;
             }
             break;
@@ -516,7 +516,7 @@ void Spy::observeFramebuffer(uint8_t api, bool pendMessaging) {
         if (pendMessaging) {
           mPendingFramebufferObservation = std::move(observation);
         } else {
-          mEncoder->message(observation.get());
+          mEncoder->message(observation.get(), 0);
         }
     }
 }
@@ -528,18 +528,18 @@ void Spy::onPostFence(CallObserver* observer) {
         // glGetError() cleared the error in the driver.
         // Fake it the next time the user calls glGetError().
         if (traceErr != 0) {
-            setFakeGlError(traceErr);
+            setFakeGlError(observer, traceErr);
         }
 
         auto es = new gles_pb::ErrorState();
         es->set_tracedriversglerror(traceErr);
         es->set_interceptorsglerror(observer->getError());
-        observer->addExtra(es);
+        observer->encode(es);
     }
 }
 
-void Spy::setFakeGlError(GLenum_Error error) {
-    std::shared_ptr<Context> ctx = this->Contexts[mCurrentThread];
+void Spy::setFakeGlError(CallObserver* observer, GLenum_Error error) {
+    std::shared_ptr<Context> ctx = this->Contexts[observer->getThreadId()];
     if (ctx) {
         GLenum_Error& fakeGlError = this->mFakeGlError[ctx->mIdentifier];
         if (fakeGlError == 0) {
@@ -549,23 +549,17 @@ void Spy::setFakeGlError(GLenum_Error error) {
 }
 
 uint32_t Spy::glGetError(CallObserver* observer) {
-    std::shared_ptr<Context> ctx = this->Contexts[mCurrentThread];
+    std::shared_ptr<Context> ctx = this->Contexts[observer->getThreadId()];
     if (ctx) {
         GLenum_Error& fakeGlError = this->mFakeGlError[ctx->mIdentifier];
         if (fakeGlError != 0) {
-            observer->encodeAndDeleteCommand(new gles_pb::glGetError());
+            observer->encode(new gles_pb::glGetError());
             GLenum_Error err = fakeGlError;
             fakeGlError = 0;
             return err;
         }
     }
     return GlesSpy::glGetError(observer);
-}
-
-void Spy::onThreadSwitched(CallObserver* observer, uint64_t threadID) {
-    auto st = new core_pb::switchThread();
-    st->set_threadid(threadID);
-    observer->encodeAndDeleteCommand(st);
 }
 
 #if 0 // NON-EGL CONTEXTS ARE CURRENTLY NOT SUPPORTED
