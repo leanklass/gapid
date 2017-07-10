@@ -20,13 +20,6 @@ package atom_pb;
 // Invoke is the atom that marks the invocation point in the set of atoms for a command.
 message Invoke {}
 
-// Aborted is an extra used to mark atoms which did not finish execution.
-// This can be expected (e.g. GL error), or unexpected (failed assertion).
-message Aborted {
-    bool IsAssert = 1;
-    string Reason = 2;
-}
-
 // CommandCounter holds the counter value of the begining and end of an API
 // command. It should only be sent for the first completed graphics command, or
 // for any graphics command which overlaps the startup or termination of
