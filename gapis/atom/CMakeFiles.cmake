@@ -20,7 +20,6 @@
 set(files
     data.go
     doc.go
-    resource.go
 )
 set(dirs
     atom_pb
