@@ -40,12 +40,12 @@
     {{range $c := AllCommands $}}
       {{if not (GetAnnotation $c "pfn")}}
         {{$proto := $c.Name | ProtoGoName}}
-        {{$p := print (Global "Store") "." $proto}}
+        {{$p := print (Global "Store") "." $proto "Params"}}
         {{$o := $c.Name | GoCommandName}}
-        protoconv.Register(¶
+        protoconv.Register(»¶
           func(ctx context.Context, in *{{$o}}) (*{{$p}}, error) { return in.ToProto(), nil },¶
           func(ctx context.Context, in *{{$p}}) (*{{$o}}, error) { return {{$o}}From(in), nil },¶
-        )¶
+        «)¶
       {{end}}
     {{end}}
     {{range $c := $.Classes}}
@@ -53,10 +53,10 @@
         {{$proto := $c.Name | ProtoGoName}}
         {{$p := print (Global "Store") "." $proto}}
         {{$o := $c.Name | GoCommandName}}
-        protoconv.Register(¶
+        protoconv.Register(»¶
           func(ctx context.Context, in *{{$o}}) (*{{$p}}, error) { return in.ToProto(), nil },¶
           func(ctx context.Context, in *{{$p}}) (*{{$o}}, error) { v := {{$o}}From(in); return &v, nil },¶
-        )¶
+        «)¶
       {{end}}
     {{end}}
   «}¶
@@ -84,20 +84,21 @@
   {{AssertType $ "Function"}}
   {{$name := $.Name | GoCommandName}}
   {{$proto := $.Name | ProtoGoName}}
+  {{$p := print (Global "Store") "." $proto "Params"}}
   ¶
   // ToProto returns the primary storage atom of the {{$name}} command.¶
-  func (ϟa *{{$name}}) ToProto() *{{Global "OutputDir"}}_pb.{{$proto}} {»¶
-    to := &{{Global "OutputDir"}}_pb.{{$proto}}{}¶
-    {{range $v := $.FullParameters}}
+  func (ϟa *{{$name}}) ToProto() *{{$p}} {»¶
+    to := &{{$p}}{}¶
+    {{range $v := $.CallParameters}}
       {{Template "Convert.To" "Field" $v "Outer" $proto}}
     {{end}}
     return to¶
   «}¶
   ¶
   // {{$name}}From builds a {{$name}} from the storage form.¶
-  func {{$name}}From(from *{{Global "OutputDir"}}_pb.{{$proto}}) *{{$name}} {»¶
+  func {{$name}}From(from *{{$p}}) *{{$name}} {»¶
     ϟa := &{{$name}}{}¶
-    {{range $v := $.FullParameters}}
+    {{range $v := $.CallParameters}}
       {{Template "Convert.From" "Field" $v "Outer" $proto}}
     {{end}}
     return ϟa¶
