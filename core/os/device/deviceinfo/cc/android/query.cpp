@@ -15,12 +15,12 @@
  */
 
 #include "egl_lite.h"
-#include "jni_helpers.h"
 
 #include "../query.h"
 
 #include "core/cc/log.h"
 #include "core/cc/get_gles_proc_address.h"
+#include "core/cc/jni_helpers.h"
 
 #include <cstring>
 
@@ -267,14 +267,14 @@ bool createContext(void* platform_data) {
 
     JNIEnv* env = reinterpret_cast<JNIEnv*>(platform_data);
 
-    Class build(env, "android/os/Build");
+    core::jni::Class build(env, "android/os/Build");
     CHECK(build.get_field("SUPPORTED_ABIS", gContext.mSupportedABIs));
     CHECK(build.get_field("HOST", gContext.mHost));
     CHECK(build.get_field("SERIAL", gContext.mSerial));
     CHECK(build.get_field("HARDWARE", gContext.mHardware));
     CHECK(build.get_field("DISPLAY", gContext.mOSBuild));
 
-    Class version(env, "android/os/Build$VERSION");
+    core::jni::Class version(env, "android/os/Build$VERSION");
     CHECK(version.get_field("RELEASE", gContext.mOSName));
     CHECK(version.get_field("SDK_INT", gContext.mOSVersion));
 

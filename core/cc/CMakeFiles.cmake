@@ -41,6 +41,7 @@ set(files
     id.h
     interval_list.h
     interval_list_test.cpp
+    jni_helpers.h
     lock.h
     log.cpp
     log.h

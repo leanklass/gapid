@@ -15,13 +15,16 @@
  */
 
 
-#ifndef DEVICEINFO_ANDROID_JNI_HELPERS_H
-#define DEVICEINFO_ANDROID_JNI_HELPERS_H
+#ifndef CORE_JNI_HELPERS_H
+#define CORE_JNI_HELPERS_H
 
 #include <jni.h>
 
 #include <string>
 #include <vector>
+
+namespace core {
+namespace jni {
 
 // Class is a wrapper around a JNIEnv and class name and offers methods for
 // getting fields.
@@ -101,4 +104,7 @@ void Class::convString(jstring str, std::string& out) {
     mEnv->ReleaseStringUTFChars(str, chars);
 }
 
-#endif  // DEVICEINFO_ANDROID_JNI_HELPERS_H
+}  // namespace jni
+}  // namespace core
+
+#endif  // CORE_JNI_HELPERS_H

@@ -108,6 +108,9 @@ class Spy : public GlesSpy, public VulkanSpy {
   // we start.
   std::atomic<int> mSuspendCaptureFrames;
 
+  // Directory to the native libs directory.
+  std::string mNativeLibsPath;
+
   // The connection stream to the server
   std::shared_ptr<ConnectionStream> mConnection;
   // The number of frames that we want to capture

@@ -44,16 +44,18 @@
 #endif //  TARGET_OS == GAPID_OS_WINDOWS
 
 #if TARGET_OS == GAPID_OS_ANDROID
+#include <dlfcn.h>
 #include <sys/prctl.h>
 #include <jni.h>
 static JavaVM* gJavaVM = nullptr;
 extern "C"
+
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     GAPID_INFO("JNI_OnLoad() was called. vm = %p", vm);
     gJavaVM = vm;
     return JNI_VERSION_1_6;
 }
-void* queryPlatformData() {
+JNIEnv* queryPlatformData() {
     JNIEnv* env = nullptr;
 
     auto res = gJavaVM->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
@@ -180,8 +182,9 @@ Spy::Spy()
         mCaptureFrames = header.mNumFrames;
         mSuspendCaptureFrames.store((header.mFlags & ConnectionHeader::FLAG_DEFER_START)?
             kSuspendIndefinitely: mSuspendCaptureFrames.load());
+        mNativeLibsPath = header.mNativeLibsPath;
     } else {
-        GAPID_WARNING("Failed to read connection header");
+        GAPID_FATAL("Failed to read connection header");
     }
     set_valid_apis(header.mAPIs);
     GAPID_ERROR("APIS %08x", header.mAPIs);
@@ -214,11 +217,12 @@ Spy::Spy()
 }
 
 void Spy::writeHeader() {
-    if (!query::createContext(queryPlatformData())) {
+    auto playformData = queryPlatformData();
+    if (!query::createContext(playformData)) {
         GAPID_ERROR("query::createContext() errored: %s", query::contextError());
     }
     capture::Header file_header;
-    file_header.set_allocated_device(query::getDeviceInstance(queryPlatformData()));
+    file_header.set_allocated_device(query::getDeviceInstance(playformData));
     file_header.set_allocated_abi(query::currentABI());
     mEncoder->message(&file_header);
     query::destroyContext();
@@ -374,6 +378,42 @@ void Spy::onPreStartOfFrame(CallObserver* observer, uint8_t api) {
                mNumFrames, mNumDraws, mNumDrawsPerFrame);
     mNumFrames++;
     mNumDrawsPerFrame = 0;
+
+
+
+#if TARGET_OS == GAPID_OS_ANDROID
+    const char* gvr[] = {
+        "gvr_buffer_spec_create",
+        "gvr_buffer_spec_destroy",
+        "gvr_buffer_spec_get_size",
+        "gvr_buffer_spec_set_size",
+        "gvr_buffer_spec_get_samples",
+        "gvr_buffer_spec_set_samples",
+        "gvr_buffer_spec_set_color_format",
+        "gvr_buffer_spec_set_depth_stencil_format",
+        "gvr_buffer_spec_set_multiview_layers",
+        "gvr_swap_chain_create",
+        "gvr_swap_chain_destroy",
+        "gvr_swap_chain_get_buffer_count",
+        "gvr_swap_chain_get_buffer_size",
+        "gvr_swap_chain_resize_buffer",
+        "gvr_swap_chain_acquire_frame",
+        "gvr_frame_bind_buffer",
+        "gvr_frame_unbind",
+        "gvr_frame_get_buffer_size",
+        "gvr_frame_get_framebuffer_object",
+        "gvr_frame_submit",
+        "gvr_bind_default_framebuffer",
+        nullptr,
+    };
+    auto path = mNativeLibsPath + "/libgvr.so";
+    auto libgvr = dlopen(path.c_str(), RTLD_NOW);
+    GAPID_INFO("dlopen('%s', RTLD_NOW): %p", path.c_str(), libgvr);
+    for (int i = 0; gvr[i] != nullptr; i++) {
+        auto func = gvr[i];
+        GAPID_INFO("dlsym('%s'): %p", func, dlsym(libgvr, func));
+    }
+#endif //  TARGET_OS == GAPID_OS_ANDROID
 }
 
 void Spy::onPostStartOfFrame(CallObserver* observer) {

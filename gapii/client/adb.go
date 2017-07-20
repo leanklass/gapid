@@ -33,11 +33,22 @@ const (
 	getPidRetries = 7
 )
 
+// Process represents a running process to capture.
+type Process struct {
+	// Cleanup should be called once the process is no longer needed.
+	Cleanup task.Task
+
+	// The local host port used to connect to GAPII.
+	Port int
+
+	nativeLibsPath string
+}
+
 // StartOrAttach launches an activity on an android device with the GAPII interceptor
 // enabled using the gapid.apk built for the ABI matching the specified action and device.
 // If there is no activity provided, it will try to attach to any already running one.
 // GAPII will attempt to connect back on the returned host port to write the trace.
-func StartOrAttach(ctx context.Context, p *android.InstalledPackage, a *android.ActivityAction) (port adb.TCPPort, cleanup task.Task, err error) {
+func StartOrAttach(ctx context.Context, p *android.InstalledPackage, a *android.ActivityAction) (*Process, error) {
 	ctx = log.Enter(ctx, "start")
 	if a != nil {
 		ctx = log.V{"activity": a.Activity}.Bind(ctx)
@@ -53,7 +64,7 @@ func StartOrAttach(ctx context.Context, p *android.InstalledPackage, a *android.
 
 	log.I(ctx, "Turning device screen on")
 	if err := d.TurnScreenOn(ctx); err != nil {
-		return 0, nil, log.Err(ctx, err, "Couldn't turn device screen on")
+		return nil, log.Err(ctx, err, "Couldn't turn device screen on")
 	}
 
 	log.I(ctx, "Checking for lockscreen")
@@ -62,49 +73,49 @@ func StartOrAttach(ctx context.Context, p *android.InstalledPackage, a *android.
 		log.W(ctx, "Couldn't determine lockscreen state: %v", err)
 	}
 	if locked {
-		return 0, nil, log.Err(ctx, nil, "Cannot trace app on locked device")
+		return nil, log.Err(ctx, nil, "Cannot trace app on locked device")
 	}
 
-	port, err = adb.LocalFreeTCPPort()
+	port, err := adb.LocalFreeTCPPort()
 	if err != nil {
-		return 0, nil, log.Err(ctx, err, "Finding free port")
+		return nil, log.Err(ctx, err, "Finding free port")
 	}
 
 	log.I(ctx, "Checking gapid.apk is installed")
 	apk, err := gapidapk.EnsureInstalled(ctx, d, abi)
 	if err != nil {
-		return 0, nil, log.Err(ctx, err, "Installing gapid.apk")
+		return nil, log.Err(ctx, err, "Installing gapid.apk")
 	}
 
 	ctx = log.V{"port": port}.Bind(ctx)
 
 	log.I(ctx, "Forwarding")
 	if err := d.Forward(ctx, adb.TCPPort(port), adb.NamedAbstractSocket("gapii")); err != nil {
-		return 0, nil, log.Err(ctx, err, "Setting up port forwarding")
+		return nil, log.Err(ctx, err, "Setting up port forwarding")
 	}
 
 	// FileDir may fail here. This happens if/when the app is non-debuggable.
 	// Don't set up vulkan tracing here, since the loader will not try and load the layer
 	// if we aren't debuggable regardless.
 	if err := d.Command("shell", "setprop", "debug.vulkan.layers", "VkGraphicsSpy").Run(ctx); err != nil {
-		d.RemoveForward(ctx, adb.TCPPort(port))
-		return 0, nil, log.Err(ctx, err, "Setting up vulkan layer")
+		d.RemoveForward(ctx, port)
+		return nil, log.Err(ctx, err, "Setting up vulkan layer")
 	}
 
-	doCleanup := func(ctx context.Context) error {
+	cleanup := func(ctx context.Context) error {
 		d.Command("shell", "setprop", "debug.vulkan.layers", "\"\"").Run(ctx)
-		return d.RemoveForward(ctx, adb.TCPPort(port))
+		return d.RemoveForward(ctx, port)
 	}
 	defer func() {
 		if err != nil {
-			doCleanup(ctx)
+			cleanup(ctx)
 		}
 	}()
 
 	if a != nil {
 		log.I(ctx, "Starting activity in debug mode")
 		if err := d.StartActivityForDebug(ctx, *a); err != nil {
-			return 0, nil, log.Err(ctx, err, "Starting activity in debug mode")
+			return nil, log.Err(ctx, err, "Starting activity in debug mode")
 		}
 	} else {
 		log.I(ctx, "No start activity selected - trying to attach...")
@@ -117,13 +128,14 @@ func StartOrAttach(ctx context.Context, p *android.InstalledPackage, a *android.
 		pid, err = p.Pid(ctx)
 	}
 	if err != nil {
-		return 0, nil, log.Err(ctx, err, "Getting pid")
+		return nil, log.Err(ctx, err, "Getting pid")
 	}
 	ctx = log.V{"pid": pid}.Bind(ctx)
 
-	if err := loadLibrariesViaJDWP(ctx, apk, pid, d); err != nil {
-		return 0, nil, err
+	process := &Process{Cleanup: cleanup, Port: int(port)}
+	if err := process.loadLibrariesViaJDWP(ctx, apk, pid, d); err != nil {
+		return nil, err
 	}
 
-	return port, doCleanup, nil
+	return process, nil
 }
