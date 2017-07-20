@@ -90,11 +90,11 @@ func (s siSize) String() string {
 	return fmt.Sprintf(f, v)
 }
 
-func capture(ctx context.Context, port int, s task.Signal, w io.Writer, o Options) (int64, error) {
+func (p *Process) capture(ctx context.Context, s task.Signal, w io.Writer, o Options) (int64, error) {
 	if task.Stopped(ctx) {
 		return 0, nil
 	}
-	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", p.Port))
 	if err != nil {
 		return 0, nil // Treat failure-to-connect as target-not-ready instead of an error.
 	}
@@ -153,10 +153,12 @@ func capture(ctx context.Context, port int, s task.Signal, w io.Writer, o Option
 // Capture opens up the specified port and then waits for a capture to be
 // delivered using the specified capture options.
 // It copies the capture into the supplied writer.
-func Capture(ctx context.Context, port int, s task.Signal, w io.Writer, options Options) (int64, error) {
-	log.I(ctx, "Waiting for connection to localhost:%d...", port)
+// If the process was started with the DeferStart flag, then tracing will wait
+// until s is fired.
+func (p *Process) Capture(ctx context.Context, s task.Signal, w io.Writer, options Options) (int64, error) {
+	log.I(ctx, "Waiting for connection to localhost:%d...", p.Port)
 	for {
-		count, err := capture(ctx, port, s, w, options)
+		count, err := p.capture(ctx, s, w, options)
 		if err != nil {
 			return count, err
 		}

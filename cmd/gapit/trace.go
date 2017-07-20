@@ -140,7 +140,8 @@ func (verb *traceVerb) captureLocal(ctx context.Context, flags flag.FlagSet, por
 	if output == "" {
 		output = "capture.gfxtrace"
 	}
-	return doCapture(ctx, options, port, output, verb.For)
+	process := &client.Process{Port: port}
+	return doCapture(ctx, process, options, output, verb.For)
 }
 
 func (verb *traceVerb) captureADB(ctx context.Context, flags flag.FlagSet, options client.Options) error {
@@ -262,11 +263,11 @@ func (verb *traceVerb) captureADB(ctx context.Context, flags flag.FlagSet, optio
 		defer d.TurnScreenOff(ctx) // Think green!
 	}
 
-	port, cleanup, err := client.StartOrAttach(ctx, pkg, a)
+	process, err := client.StartOrAttach(ctx, pkg, a)
 	if err != nil {
 		return err
 	}
-	defer cleanup(ctx)
+	defer process.Cleanup(ctx)
 
 	ctx, stop := task.WithCancel(ctx)
 	if verb.Record.Inputs {
@@ -283,10 +284,10 @@ func (verb *traceVerb) captureADB(ctx context.Context, flags flag.FlagSet, optio
 		}
 	}
 
-	return doCapture(ctx, options, int(port), output, verb.For)
+	return doCapture(ctx, process, options, output, verb.For)
 }
 
-func doCapture(ctx context.Context, options client.Options, port int, out string, duration time.Duration) error {
+func doCapture(ctx context.Context, process *client.Process, options client.Options, out string, duration time.Duration) error {
 	log.I(ctx, "Creating file '%v'", out)
 	os.MkdirAll(filepath.Dir(out), 0755)
 	file, err := os.Create(out)
@@ -313,7 +314,7 @@ func doCapture(ctx context.Context, options client.Options, port int, out string
 	} else {
 		ctx, _ = task.WithTimeout(ctx, duration)
 	}
-	_, err = client.Capture(ctx, port, signal, file, options)
+	_, err = process.Capture(ctx, signal, file, options)
 	if err != nil {
 		return err
 	}

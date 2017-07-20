@@ -80,7 +80,7 @@ func waitForVulkanLoad(ctx context.Context, conn *jdwp.Connection) (*jdwp.EventM
 // loadLibrariesViaJDWP connects to the application waiting for a JDWP
 // connection with the specified process id, sends a number of JDWP commands to
 // load the list of libraries.
-func loadLibrariesViaJDWP(ctx context.Context, gapidAPK *gapidapk.APK, pid int, d adb.Device) error {
+func (p *Process) loadLibrariesViaJDWP(ctx context.Context, gapidAPK *gapidapk.APK, pid int, d adb.Device) (err error) {
 	const (
 		reconnectAttempts = 10
 		reconnectDelay    = time.Second
@@ -124,6 +124,7 @@ func loadLibrariesViaJDWP(ctx context.Context, gapidAPK *gapidapk.APK, pid int, 
 		sock.Close()
 	}()
 
+	loadedGAPII := false
 	classLoaderThread := jdwp.ThreadID(0)
 
 	processABI := func(j *jdbg.JDbg) (*device.ABI, error) {
@@ -171,26 +172,35 @@ func loadLibrariesViaJDWP(ctx context.Context, gapidAPK *gapidapk.APK, pid int, 
 			// load libgapii and friends here.
 			return loadGAPII(j)
 		})
-		if err != nil {
+		if err == nil {
+			loadedGAPII = true
+		} else {
 			return log.Err(ctx, err, "JDWP failure")
 		}
 	}
 
-	// If we did not have vulkan support, then we should try to load with
-	// Application.onCreate().
-	if classLoaderThread == jdwp.ThreadID(0) {
-		// Wait for Application.onCreate to be called.
-		log.I(ctx, "Waiting for Application.onCreate()")
-		onCreate, err := waitForOnCreate(ctx, conn, classLoaderThread)
-		if err != nil {
-			return log.Err(ctx, err, "Waiting for Application.OnCreate")
-		}
+	// Wait for Application.onCreate to be called.
+	log.I(ctx, "Waiting for Application.onCreate()")
+	onCreate, err := waitForOnCreate(ctx, conn, classLoaderThread)
+	if err != nil {
+		return log.Err(ctx, err, "Waiting for Application.OnCreate")
+	}
 
-		// Create a JDbg session to install and load the libraries.
-		log.I(ctx, "Installing interceptor libraries")
-		if err := jdbg.Do(conn, onCreate.Thread, loadGAPII); err != nil {
-			return log.Err(ctx, err, "JDWP failure")
+	// Create a JDbg session to install and load the libraries.
+	log.I(ctx, "Installing interceptor libraries")
+	err = jdbg.Do(conn, onCreate.Thread, func(j *jdbg.JDbg) error {
+		if !loadedGAPII {
+			if err := loadGAPII(j); err != nil {
+				return err
+			}
 		}
+		return nil
+	})
+
+	if err != nil {
+		// If we did not have vulkan support, then we should try to load with
+		// Application.onCreate().
+		return log.Err(ctx, err, "JDWP failure")
 	}
 
 	return nil
