@@ -78,24 +78,18 @@ func buildResources(ctx context.Context, p *path.Command) (*ResolvedResources, e
 		resources[i] = r
 	}
 
-	for i, cmd := range cmds {
+	err = api.ForeachCmd(ctx, cmds, func(ctx context.Context, id api.CmdID, cmd api.Cmd) error {
 		log.W(ctx, "Resources: %+v", cmd)
 		for _, e := range *cmd.Extras() {
 			log.W(ctx, "    Resources : Extra %+v", e)
 		}
 		currentCmdResourceCount = 0
-		currentCmdIndex = uint64(i)
-		if err := cmd.Mutate(ctx, state, nil); err != nil && err == context.Canceled {
-			return nil, err
-		}
-	}
-
-	for i, a := range cmds {
-		currentCmdResourceCount = 0
-		currentCmdIndex = uint64(i)
-		if err := a.Mutate(ctx, state, nil); err != nil && err == context.Canceled {
-			return nil, err
-		}
+		currentCmdIndex = uint64(id)
+		cmd.Mutate(ctx, state, nil)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	resourceData := make(map[id.ID]interface{})
