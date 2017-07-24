@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/gapid/core/log"
 	"github.com/google/gapid/gapis/api"
 	"github.com/google/gapid/gapis/api/sync"
 	"github.com/google/gapid/gapis/capture"
@@ -58,11 +59,16 @@ func (r *GlobalStateResolvable) Resolve(ctx context.Context) (interface{}, error
 	if err != nil {
 		return nil, err
 	}
+
 	s, err := capture.NewState(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, cmd := range cmds {
+		log.W(ctx, "State: %+v", cmd)
+		for _, e := range *cmd.Extras() {
+			log.W(ctx, "    State : Extra %+v", e)
+		}
 		if err := cmd.Mutate(ctx, s, nil); err != nil && err == context.Canceled {
 			return nil, err
 		}
