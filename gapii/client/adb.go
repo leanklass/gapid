@@ -40,6 +40,8 @@ type Process struct {
 
 	// The local host port used to connect to GAPII.
 	Port int
+
+	gvrHandle uint64
 }
 
 // StartOrAttach launches an activity on an android device with the GAPII interceptor

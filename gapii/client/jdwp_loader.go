@@ -189,6 +189,9 @@ func (p *Process) loadLibrariesViaJDWP(ctx context.Context, gapidAPK *gapidapk.A
 	// Create a JDbg session to install and load the libraries.
 	log.I(ctx, "Installing interceptor libraries")
 	err = jdbg.Do(conn, onCreate.Thread, func(j *jdbg.JDbg) error {
+		libLoader := j.Class("com/google/vr/cardboard/VrCoreLibraryLoader")
+		p.gvrHandle = (uint64)(libLoader.Call("loadNativeGvrLibrary", j.This(), 1, 8, 1).Get().(int64))
+
 		if !loadedGAPII {
 			if err := loadGAPII(j); err != nil {
 				return err

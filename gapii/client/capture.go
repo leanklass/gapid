@@ -99,7 +99,7 @@ func (p *Process) capture(ctx context.Context, s task.Signal, w io.Writer, o Opt
 		return 0, nil // Treat failure-to-connect as target-not-ready instead of an error.
 	}
 	defer conn.Close()
-	if err := sendHeader(conn, o); err != nil {
+	if err := sendHeader(conn, o, p.gvrHandle); err != nil {
 		return 0, log.Err(ctx, err, "Header send failed")
 	}
 
